@@ -1,0 +1,97 @@
+name: Build PyCS APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 1. Скачивание кода из репозитория
+        uses: actions/checkout@v4
+
+      - name: 2. Кэширование Buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            .buildozer
+            ~/.buildozer
+          key: buildozer-pygame-${{ runner.os }}-v1
+
+      - name: 3. Установка системных библиотек
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev libtinfo5 cmake \
+            libffi-dev libssl-dev automake libltdl-dev \
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+            libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev
+
+      - name: 4. Установка Python и Buildozer
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 5. Установка пакетов сборщика
+        run: |
+          pip install --upgrade pip "setuptools<70.0.0" wheel
+          pip install buildozer==1.5.0 cython==0.29.33
+
+      - name: 6. Подготовка cs_0.1.py, иконки и buildozer.spec
+        run: |
+          if [ -f "cs_0.1.py" ]; then
+            cp cs_0.1.py main.py
+          fi
+
+          if [ ! -f "icon.png" ]; then
+            python3 -c '
+          import pygame
+          pygame.init()
+          s = pygame.Surface((512, 512))
+          s.fill((25, 30, 40))
+          pygame.draw.circle(s, (240, 190, 50), (256, 256), 200, 16)
+          pygame.draw.line(s, (220, 50, 50), (256, 20), (256, 492), 16)
+          pygame.draw.line(s, (220, 50, 50), (20, 256), (492, 256), 16)
+          pygame.image.save(s, "icon.png")
+          '
+          fi
+
+          cat << 'EOF' > buildozer.spec
+          [app]
+          title = PyCS 3D Mobile
+          package.name = pycsmobile
+          package.domain = org.csgame
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas
+          version = 0.1
+          requirements = python3,pygame
+          orientation = landscape
+          fullscreen = 1
+          icon.filename = %(source.dir)s/icon.png
+          android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE
+          android.api = 33
+          android.minapi = 21
+          android.ndk = 25b
+          android.archs = arm64-v8a
+          android.accept_sdk_license = True
+
+          [buildozer]
+          log_level = 2
+          warn_on_root = 0
+          EOF
+
+      - name: 7. Компиляция APK
+        run: |
+          yes | buildozer android debug
+
+      - name: 8. Выгрузка готового APK в Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PyCS-Mobile-APK
+          path: bin/*.apk
+          
